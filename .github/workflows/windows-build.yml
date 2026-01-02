@@ -1,15 +1,52 @@
 name: Windows Build UxPlay
 
+# いつビルドするかのトリガー
 on:
   push:
+    branches: [ master ]   # 今は master ブランチに対応
+  pull_request:
     branches: [ master ]
 
 jobs:
   build:
     runs-on: windows-2022
+
     steps:
-      - uses: actions/checkout@v3
+      # 1. リポジトリをクローン
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Visual Studio 2022 環境
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1
+
+      # 3. CMake インストール（公式アクション）
       - name: Setup CMake
         uses: actions/setup-cmake@v3
         with:
-          cmake-version: "3.27.1"
+          cmake-version: '3.27.4'
+
+      # 4. GStreamer インストール（Chocolatey）
+      - name: Install GStreamer
+        run: |
+          choco install gstreamer --version=1.22.0 -y
+          setx PATH "%PATH%;C:\gstreamer\1.0\x86_64"
+
+      # 5. Release 用ディレクトリ作成
+      - name: Create build directory
+        run: mkdir build
+
+      # 6. CMake でプロジェクト生成
+      - name: Configure with CMake
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:/gstreamer/1.0/x86_64"
+
+      # 7. ビルド
+      - name: Build
+        run: cmake --build build --config Release --target ALL_BUILD
+
+      # 8. Release 成果物をアップロード
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: UxPlay-Windows
+          path: build/Release/*
