@@ -1,6 +1,11 @@
-name: Windows Build (UxPlay)
+name: Build UxPlay for Windows
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch: # 手動実行ボタンを有効化
 
 jobs:
   build:
@@ -10,11 +15,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # vcpkg のセットアップ（Windowsランナーには既に含まれていますが、キャッシュを効かせると高速です）
+      # vcpkg を使って依存関係をインストール
+      # gstreamer は plugins-base, plugins-good, plugins-bad, openssl の各機能を含めてインストールします
       - name: Install dependencies via vcpkg
         run: |
-          vcpkg install openssl:x64-windows
-          vcpkg install gstreamer:x64-windows gst-plugins-base:x64-windows gst-plugins-good:x64-windows
+          vcpkg install `
+            openssl:x64-windows `
+            gstreamer[core,plugins-base,plugins-good,plugins-bad,openssl]:x64-windows
 
       - name: Configure CMake
         run: |
@@ -22,14 +29,22 @@ jobs:
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_VERBOSE_MAKEFILE=ON
 
       - name: Build
         run: |
-          cmake --build build --config Release
+          cmake --build build --config Release --parallel
+
+      # 成果物を整理してアップロード
+      - name: Prepare Artifact
+        run: |
+          mkdir output
+          copy build\Release\uxplay.exe output\
+          # DLLも同梱したい場合は、vcpkg のバイナリをコピーする処理が必要になる場合があります
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: UxPlay-Windows
-          path: build/Release/*.exe
+          uses: actions/upload-artifact@v4
+          with:
+            name: UxPlay-Windows-x64
+            path: output/
