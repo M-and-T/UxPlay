@@ -1,6 +1,5 @@
 name: Windows Build UxPlay
 
-# いつビルドするかのトリガー
 on:
   push:
     branches: [ master ]
@@ -12,41 +11,39 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      # 1. リポジトリをクローン
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # 2. Visual Studio 2022 環境
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v1
-
-      # 3. CMake インストール（公式アクション）
-      - name: Setup CMake
-        uses: actions/setup-cmake@v3
+      # CMake と Ninja をインストール（最新安定）
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
         with:
-          cmake-version: '3.27.4'
+          cmakeVersion: latest
+          ninjaVersion: latest
 
-      # 4. GStreamer インストール（Chocolatey）
+      # GStreamer を Chocolatey 経由でインストール
       - name: Install GStreamer
         run: |
           choco install gstreamer --version=1.22.0 -y
+          # パスを通す
           setx PATH "%PATH%;C:\gstreamer\1.0\x86_64"
 
-      # 5. Release 用ディレクトリ作成
+      # ビルド用ディレクトリ作成
       - name: Create build directory
         run: mkdir build
 
-      # 6. CMake でプロジェクト生成
+      # CMake でプロジェクト構成
       - name: Configure with CMake
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:/gstreamer/1.0/x86_64"
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:/gstreamer/1.0/x86_64"
 
-      # 7. ビルド
+      # 実際のビルド
       - name: Build
         run: cmake --build build --config Release --target ALL_BUILD
 
-      # 8. Release 成果物をアップロード
+      # 成果物をアーティファクトとしてアップロード
       - name: Upload Release Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: UxPlay-Windows
           path: build/Release/*
