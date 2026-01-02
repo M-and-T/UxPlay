@@ -1,57 +1,35 @@
-name: Windows Build UxPlay
+name: Windows Build (UxPlay)
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+on: [push, pull_request]
 
 jobs:
   build:
     runs-on: windows-2022
 
     steps:
-      # 1. リポジトリをクローン
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. CMake と Ninja をインストール
-      - name: Install CMake
-        uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: latest
-          ninjaVersion: latest
-
-      # 3. Visual Studio 環境のセットアップ
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v1
-
-      # 4. Chocolatey インストール済みで GStreamer & OpenSSL をインストール
-      - name: Install dependencies
+      # vcpkg のセットアップ（Windowsランナーには既に含まれていますが、キャッシュを効かせると高速です）
+      - name: Install dependencies via vcpkg
         run: |
-          choco install gstreamer --version=1.22.0 -y
-          choco install openssl.light -y
-          setx PATH "%PATH%;C:\gstreamer\1.0\x86_64;C:\Program Files\OpenSSL-Win64\bin"
+          vcpkg install openssl:x64-windows
+          vcpkg install gstreamer:x64-windows gst-plugins-base:x64-windows gst-plugins-good:x64-windows
 
-      # 5. Release 用ビルドフォルダ作成
-      - name: Create build directory
-        run: mkdir build
-
-      # 6. CMake でプロジェクト構成
-      - name: Configure with CMake
+      - name: Configure CMake
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-          -DCMAKE_PREFIX_PATH="C:/gstreamer/1.0/x86_64;C:/Program Files/OpenSSL-Win64" `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DCMAKE_VERBOSE_MAKEFILE=ON
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCMAKE_BUILD_TYPE=Release
 
-      # 7. ビルド
       - name: Build
-        run: cmake --build build --config Release --target ALL_BUILD
+        run: |
+          cmake --build build --config Release
 
-      # 8. 成果物をアップロード
-      - name: Upload Release Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: UxPlay-Windows
-          path: build/Release/*
+          path: build/Release/*.exe
