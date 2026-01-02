@@ -11,37 +11,45 @@ jobs:
     runs-on: windows-2022
 
     steps:
+      # 1. リポジトリをクローン
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # CMake と Ninja をインストール（最新安定）
+      # 2. CMake と Ninja をインストール
       - name: Install CMake
         uses: lukka/get-cmake@latest
         with:
           cmakeVersion: latest
           ninjaVersion: latest
 
-      # GStreamer を Chocolatey 経由でインストール
-      - name: Install GStreamer
+      # 3. Visual Studio 環境のセットアップ
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1
+
+      # 4. Chocolatey インストール済みで GStreamer & OpenSSL をインストール
+      - name: Install dependencies
         run: |
           choco install gstreamer --version=1.22.0 -y
-          # パスを通す
-          setx PATH "%PATH%;C:\gstreamer\1.0\x86_64"
+          choco install openssl.light -y
+          setx PATH "%PATH%;C:\gstreamer\1.0\x86_64;C:\Program Files\OpenSSL-Win64\bin"
 
-      # ビルド用ディレクトリ作成
+      # 5. Release 用ビルドフォルダ作成
       - name: Create build directory
         run: mkdir build
 
-      # CMake でプロジェクト構成
+      # 6. CMake でプロジェクト構成
       - name: Configure with CMake
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:/gstreamer/1.0/x86_64"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          -DCMAKE_PREFIX_PATH="C:/gstreamer/1.0/x86_64;C:/Program Files/OpenSSL-Win64" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_VERBOSE_MAKEFILE=ON
 
-      # 実際のビルド
+      # 7. ビルド
       - name: Build
         run: cmake --build build --config Release --target ALL_BUILD
 
-      # 成果物をアーティファクトとしてアップロード
+      # 8. 成果物をアップロード
       - name: Upload Release Artifact
         uses: actions/upload-artifact@v4
         with:
