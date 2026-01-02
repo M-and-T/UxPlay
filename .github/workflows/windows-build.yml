@@ -1,0 +1,15 @@
+name: Windows Build UxPlay
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmake-version: "3.27.1"
