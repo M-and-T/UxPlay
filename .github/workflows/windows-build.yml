@@ -5,7 +5,7 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
-  workflow_dispatch: # 手動実行ボタンを有効化
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,8 +15,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # vcpkg を使って依存関係をインストール
-      # gstreamer は plugins-base, plugins-good, plugins-bad, openssl の各機能を含めてインストールします
       - name: Install dependencies via vcpkg
         run: |
           vcpkg install `
@@ -36,15 +34,17 @@ jobs:
         run: |
           cmake --build build --config Release --parallel
 
-      # 成果物を整理してアップロード
       - name: Prepare Artifact
+        shell: pwsh
         run: |
-          mkdir output
-          copy build\Release\uxplay.exe output\
-          # DLLも同梱したい場合は、vcpkg のバイナリをコピーする処理が必要になる場合があります
+          New-Item -ItemType Directory -Force -Path output
+          if (Test-Path "build\Release\uxplay.exe") {
+              Copy-Item "build\Release\uxplay.exe" -Destination "output\"
+          }
+          # DLLも同梱したい場合はここでさらにコピー処理を追加可能です
 
       - name: Upload Artifact
-          uses: actions/upload-artifact@v4
-          with:
-            name: UxPlay-Windows-x64
-            path: output/
+        uses: actions/upload-artifact@v4
+        with:
+          name: UxPlay-Windows-x64
+          path: output/
