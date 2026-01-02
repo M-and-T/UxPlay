@@ -3,8 +3,6 @@ name: Build UxPlay for Windows
 on:
   push:
     branches: [ master ]
-  pull_request:
-    branches: [ master ]
   workflow_dispatch:
 
 jobs:
@@ -15,32 +13,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 依存関係をさらに追加 (libplist, zlib は必須級です)
       - name: Install dependencies via vcpkg
         run: |
           vcpkg install `
             openssl:x64-windows `
             zlib:x64-windows `
             libplist:x64-windows `
+            glib:x64-windows `
+            mdnsresponder:x64-windows `
             gstreamer[core,plugins-base,plugins-good,plugins-bad]:x64-windows
 
       - name: Configure CMake
-        id: configure
-        continue-on-error: true # 失敗しても次のログ確認ステップへ進む
         run: |
           cmake -S . -B build `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_BUILD_TYPE=Release
-
-      # Configure が失敗した場合、ログファイルの中身を表示する
-      - name: Check CMake logs on failure
-        if: steps.configure.outcome == 'failure'
-        run: |
-          if (Test-Path "build/CMakeFiles/CMakeOutput.log") { Get-Content "build/CMakeFiles/CMakeOutput.log" -Tail 50 }
-          if (Test-Path "build/CMakeFiles/CMakeError.log") { Get-Content "build/CMakeFiles/CMakeError.log" -Tail 50 }
-          exit 1 # ジョブを失敗として終了させる
+            -DCMAKE_BUILD_TYPE=Release `
+            -DNO_AIRPLAY_ADVT=OFF # AirPlay広告（Bonjour）を有効にする
 
       - name: Build
         run: |
@@ -53,6 +43,7 @@ jobs:
           if (Test-Path "build\Release\uxplay.exe") {
               Copy-Item "build\Release\uxplay.exe" -Destination "output\"
           }
+          # 実行に必要なDLLを全て収集
           Get-ChildItem -Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
 
       - name: Upload Artifact
