@@ -15,40 +15,48 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 依存関係をさらに追加 (libplist, zlib は必須級です)
       - name: Install dependencies via vcpkg
         run: |
           vcpkg install `
             openssl:x64-windows `
+            zlib:x64-windows `
+            libplist:x64-windows `
             gstreamer[core,plugins-base,plugins-good,plugins-bad]:x64-windows
 
       - name: Configure CMake
+        id: configure
+        continue-on-error: true # 失敗しても次のログ確認ステップへ進む
         run: |
           cmake -S . -B build `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_VERBOSE_MAKEFILE=ON
+            -DCMAKE_BUILD_TYPE=Release
+
+      # Configure が失敗した場合、ログファイルの中身を表示する
+      - name: Check CMake logs on failure
+        if: steps.configure.outcome == 'failure'
+        run: |
+          if (Test-Path "build/CMakeFiles/CMakeOutput.log") { Get-Content "build/CMakeFiles/CMakeOutput.log" -Tail 50 }
+          if (Test-Path "build/CMakeFiles/CMakeError.log") { Get-Content "build/CMakeFiles/CMakeError.log" -Tail 50 }
+          exit 1 # ジョブを失敗として終了させる
 
       - name: Build
         run: |
           cmake --build build --config Release --parallel
 
-      - name: Prepare Artifact (Collect EXE and DLLs)
+      - name: Prepare Artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path output
-          # 実行ファイルをコピー
           if (Test-Path "build\Release\uxplay.exe") {
               Copy-Item "build\Release\uxplay.exe" -Destination "output\"
           }
-          # vcpkgでビルドされた依存DLLを自動収集してoutputフォルダへ（これがないと他PCで動きません）
-          Get-ChildItem -Path "build\Release\*.dll" -Recurse | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
-          # vcpkg のインストールディレクトリにある bin からも DLL を収集
           Get-ChildItem -Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UxPlay-Windows-x64-Full
+          name: UxPlay-Windows-x64
           path: output/
