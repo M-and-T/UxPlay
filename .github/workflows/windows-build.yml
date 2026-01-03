@@ -37,12 +37,6 @@ jobs:
           #include <stdint.h>
           #include <time.h>
 
-          /* dns_sd types */
-          typedef struct _DNSServiceRef_t *DNSServiceRef;
-          typedef union _TXTRecordRef_t { char PrivateData[16]; char *ForceNaturalAlignment; } TXTRecordRef;
-          typedef uint32_t DNSServiceFlags;
-          typedef int32_t DNSServiceErrorType;
-
           #define CLOCK_REALTIME 0
           static int clock_gettime(int clk_id, struct timespec *tp) {
               uint64_t ticks = GetTickCount64();
@@ -66,17 +60,23 @@ jobs:
             (Get-Content $_.FullName) -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
           }
 
-          # 2. thread_handle_t 関連の初期化エラー対策
+          # 2. thread_handle_t 関連の型変換エラー対策
+          # 代入エラー C2440 を回避するため、ゼロ初期化の書き方を修正
           $thread_files = @("lib/httpd.c", "lib/raop_ntp.c", "lib/raop_rtp.c", "lib/raop_rtp_mirror.c")
           foreach ($f in $thread_files) {
             if (Test-Path $f) {
-              (Get-Content $f) -replace '([a-zA-Z0-9_]+_handle)\s*=\s*0;', '$1 = {0};' | Set-Content $f
+              (Get-Content $f) -replace '=\s*0;', '= {0};' | Set-Content $f
             }
           }
 
           # 3. plist_mem_free の二重定義修正
           if (Test-Path "lib/raop.c") {
             (Get-Content lib/raop.c) -replace 'void\s+plist_mem_free', '// void plist_mem_free' | Set-Content lib/raop.c
+          }
+
+          # 4. dnssd.h の衝突回避: TXTRecordRef の再定義エラー C2011 を防ぐ
+          if (Test-Path "lib/dnssd.h") {
+             (Get-Content lib/dnssd.h) -replace 'typedef union _TXTRecordRef_t', '// typedef union _TXTRecordRef_t' | Set-Content lib/dnssd.h
           }
 
       - name: Configure CMake
@@ -87,7 +87,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /FI`"unistd.h`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4142 /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4100 /wd4267 /wd4244 /wd4242" `
+            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /FI`"unistd.h`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive- /wd4005 /wd4142 /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4100 /wd4267 /wd4244 /wd4242" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib"
 
       - name: Build
