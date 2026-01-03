@@ -62,7 +62,7 @@ jobs:
             (Get-Content $_.FullName) -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
           }
 
-          # 2. thread_handle_t 関連の型変換エラー対策
+          # 2. thread_handle_t 関連の初期化エラー対策
           $thread_files = @("lib/httpd.c", "lib/raop_ntp.c", "lib/raop_rtp.c", "lib/raop_rtp_mirror.c")
           foreach ($f in $thread_files) {
             if (Test-Path $f) {
@@ -70,15 +70,13 @@ jobs:
             }
           }
 
-          # 3. dnssd.c の修正 (ヘッダーの変更と、Windowsでのライブラリリンク指示)
-          $dnssd_c = "lib/dnssd.c"
-          if (Test-Path $dnssd_c) {
-            $content = Get-Content $dnssd_c
-            # ヘッダーを差し替え
-            $content = $content -replace '#include "dnssd.h"', '#include <dns_sd.h>'
-            # Windowsの場合、ライブラリを自動で探す命令を先頭に追加
-            $link_pragma = "#ifdef _WIN32`n#pragma comment(lib, `"ws2_32.lib`")`n#pragma comment(lib, `"jdns_sd.lib`")`n#endif`n"
-            Set-Content $dnssd_c -Value ($link_pragma + ($content -join "`n")) -Encoding Ascii
+          # 3. dnssd.h の衝突回避 (vcpkg の dns_sd.h を優先的に読み込む)
+          $dnssd_h = "lib/dnssd.h"
+          if (Test-Path $dnssd_h) {
+            $original = Get-Content $dnssd_h -Raw
+            # dns_sd.h を先に読み込ませることで、後の重複定義を無視させる
+            $new_header = "#ifdef _WIN32`n#include <dns_sd.h>`n#define _TXTRecordRef_t_defined`n#endif`n"
+            Set-Content $dnssd_h -Value ($new_header + $original) -Encoding Ascii
           }
 
           # 4. plist_mem_free の二重定義修正
