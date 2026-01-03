@@ -39,7 +39,6 @@ jobs:
           #include <ws2tcpip.h>
           #include <stdint.h>
           #include <time.h>
-
           #define CLOCK_REALTIME 0
           static int clock_gettime(int clk_id, struct timespec *tp) {
               uint64_t ticks = GetTickCount64();
@@ -58,15 +57,12 @@ jobs:
       - name: Patch source code for MSVC
         shell: pwsh
         run: |
-          # 1. 全ての .h / .c ファイルから snprintf のマクロ定義を無効化 (標準ライブラリとの衝突回避)
+          # 1. snprintf の二重定義を無効化
           Get-ChildItem -Recurse -Include *.h, *.c | ForEach-Object {
-            $content = Get-Content $_.FullName
-            if ($content -match '#define snprintf') {
-              $content -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
-            }
+            (Get-Content $_.FullName) -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
           }
 
-          # 2. thread_handle_t 関連の型変換エラー対策 ( 0 代入を {0} 初期化へ)
+          # 2. thread_handle_t 関連の型変換エラー対策
           $thread_files = @("lib/httpd.c", "lib/raop_ntp.c", "lib/raop_rtp.c", "lib/raop_rtp_mirror.c")
           foreach ($f in $thread_files) {
             if (Test-Path $f) {
@@ -74,25 +70,13 @@ jobs:
             }
           }
 
-          # 3. dnssd.h の不整合修正 (インデントなしで挿入し、C1070 エラーを回避)
+          # 3. dnssd.h の型欠落修正 (一行ずつ追記して YAML エラーを回避)
           $dnssd_h = "lib/dnssd.h"
           if (Test-Path $dnssd_h) {
             $original = Get-Content $dnssd_h -Raw
             if ($original -notmatch "MSVC_DNSSD_TYPES_H") {
-               $types = @"
-#ifndef MSVC_DNSSD_TYPES_H
-#define MSVC_DNSSD_TYPES_H
-#ifdef _WIN32
-#include <stdint.h>
-typedef struct _DNSServiceRef_t *DNSServiceRef;
-typedef union _TXTRecordRef_t { char PrivateData[16]; char *ForceNaturalAlignment; } TXTRecordRef;
-typedef uint32_t DNSServiceFlags;
-typedef int32_t DNSServiceErrorType;
-#endif
-#endif
-
-"@
-               Set-Content $dnssd_h -Value ($types + $original) -Encoding Ascii
+               $new_header = "#ifndef MSVC_DNSSD_TYPES_H`n#define MSVC_DNSSD_TYPES_H`n#ifdef _WIN32`n#include <stdint.h>`ntypedef struct _DNSServiceRef_t *DNSServiceRef;`ntypedef union _TXTRecordRef_t { char PrivateData[16]; char *ForceNaturalAlignment; } TXTRecordRef;`ntypedef uint32_t DNSServiceFlags;`ntypedef int32_t DNSServiceErrorType;`n#endif`n#endif`n"
+               Set-Content $dnssd_h -Value ($new_header + $original) -Encoding Ascii
             }
           }
 
