@@ -32,25 +32,28 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS" `
-            -DCMAKE_CXX_FLAGS="/DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS"
+            -DCMAKE_C_FLAGS="/DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /wd4710 /wd4711 /wd5045" `
+            -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib"
 
       - name: Build
         run: |
-          cmake --build build --config Release --parallel
+          # 警告を非表示にして、本当のエラー（LNKxxx）だけを見やすくします
+          cmake --build build --config Release --parallel -- /v:m /p:WarningLevel=0
 
       - name: Prepare Artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path output
+          # 1. exe をコピー
           if (Test-Path "build\Release\uxplay.exe") {
               Copy-Item "build\Release\uxplay.exe" -Destination "output\"
           }
-          # 依存DLLを全て収集
+          # 2. vcpkg でインストールされた全 DLL をコピー (動作に必須)
           Get-ChildItem -Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
+          # 3. GStreamer のプラグイン DLL も必要になる可能性があるため、bin をすべて対象にする
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UxPlay-Windows-x64
+          name: UxPlay-Windows-x64-Build
           path: output/
