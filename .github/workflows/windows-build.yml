@@ -70,10 +70,15 @@ jobs:
             }
           }
 
-          # 3. dnssd.c が vcpkg の dns_sd.h を使うように修正 (独自定義との衝突回避)
+          # 3. dnssd.c の修正 (ヘッダーの変更と、Windowsでのライブラリリンク指示)
           $dnssd_c = "lib/dnssd.c"
           if (Test-Path $dnssd_c) {
-            (Get-Content $dnssd_c) -replace '#include "dnssd.h"', '#include <dns_sd.h>' | Set-Content $dnssd_c
+            $content = Get-Content $dnssd_c
+            # ヘッダーを差し替え
+            $content = $content -replace '#include "dnssd.h"', '#include <dns_sd.h>'
+            # Windowsの場合、ライブラリを自動で探す命令を先頭に追加
+            $link_pragma = "#ifdef _WIN32`n#pragma comment(lib, `"ws2_32.lib`")`n#pragma comment(lib, `"jdns_sd.lib`")`n#endif`n"
+            Set-Content $dnssd_c -Value ($link_pragma + ($content -join "`n")) -Encoding Ascii
           }
 
           # 4. plist_mem_free の二重定義修正
@@ -90,7 +95,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
             -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4142 /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4100 /wd4267 /wd4244 /wd4242" `
-            -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib dnssd.lib"
+            -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib"
 
       - name: Build
         run: |
