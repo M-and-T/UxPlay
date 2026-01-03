@@ -58,21 +58,24 @@ jobs:
       - name: Patch source code for MSVC
         shell: pwsh
         run: |
-          # 1. snprintf の二重定義を回避
-          if (Test-Path "lib/compat.h") {
-            (Get-Content lib/compat.h) -replace '#define snprintf _snprintf', '// #define snprintf _snprintf' | Set-Content lib/compat.h
+          # 1. 全ての .h / .c ファイルから snprintf のマクロ定義をコメントアウト
+          Get-ChildItem -Recurse -Include *.h, *.c | ForEach-Object {
+            $content = Get-Content $_.FullName
+            if ($content -match '#define snprintf') {
+              $content -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
+            }
           }
 
-          # 2. thread_handle_t (構造体) への 0 代入エラーを修正
+          # 2. thread_handle_t 関連の型変換エラー対策
+          # 代入式の置換 ( handle = 0; -> handle = {0}; )
           $thread_files = @("lib/httpd.c", "lib/raop_ntp.c", "lib/raop_rtp.c", "lib/raop_rtp_mirror.c")
           foreach ($f in $thread_files) {
             if (Test-Path $f) {
-              # "handle = 0;" を "{0}" 初期化に置換
               (Get-Content $f) -replace '([a-zA-Z0-9_]+_handle)\s*=\s*0;', '$1 = {0};' | Set-Content $f
             }
           }
 
-          # 3. dnssd.h の型欠落を修正 (インクルードガード付き)
+          # 3. dnssd.h の型欠落修正
           $dnssd_h = "lib/dnssd.h"
           $types_prefix = @"
           #ifndef MSVC_DNSSD_TYPES_H
@@ -92,8 +95,8 @@ jobs:
                $types_prefix + "`n" + $content | Set-Content $dnssd_h
             }
           }
-          
-          # 4. plist_mem_free の二重定義修正
+
+          # 4. plist_mem_free の二重定義修正 (raop.c)
           if (Test-Path "lib/raop.c") {
             (Get-Content lib/raop.c) -replace 'void\s+plist_mem_free', '// void plist_mem_free' | Set-Content lib/raop.c
           }
@@ -106,7 +109,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /D__STDC_WANT_SECURE_LIB__=0 /Dsnprintf=_snprintf /permissive /wd4710 /wd4711" `
+            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4142" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib"
 
       - name: Build
