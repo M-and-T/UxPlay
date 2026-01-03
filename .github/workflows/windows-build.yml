@@ -58,7 +58,7 @@ jobs:
       - name: Patch source code for MSVC
         shell: pwsh
         run: |
-          # 1. 全ての .h / .c ファイルから snprintf のマクロ定義をコメントアウト
+          # 1. 全ての .h / .c ファイルから snprintf のマクロ定義を無効化 (標準ライブラリとの衝突回避)
           Get-ChildItem -Recurse -Include *.h, *.c | ForEach-Object {
             $content = Get-Content $_.FullName
             if ($content -match '#define snprintf') {
@@ -66,8 +66,7 @@ jobs:
             }
           }
 
-          # 2. thread_handle_t 関連の型変換エラー対策
-          # 代入式の置換 ( handle = 0; -> handle = {0}; )
+          # 2. thread_handle_t 関連の型変換エラー対策 ( 0 代入を {0} 初期化へ)
           $thread_files = @("lib/httpd.c", "lib/raop_ntp.c", "lib/raop_rtp.c", "lib/raop_rtp_mirror.c")
           foreach ($f in $thread_files) {
             if (Test-Path $f) {
@@ -75,28 +74,29 @@ jobs:
             }
           }
 
-          # 3. dnssd.h の型欠落修正
+          # 3. dnssd.h の不整合修正 (インデントなしで挿入し、C1070 エラーを回避)
           $dnssd_h = "lib/dnssd.h"
-          $types_prefix = @"
-          #ifndef MSVC_DNSSD_TYPES_H
-          #define MSVC_DNSSD_TYPES_H
-          #ifdef _WIN32
-          #include <stdint.h>
-          typedef struct _DNSServiceRef_t *DNSServiceRef;
-          typedef union _TXTRecordRef_t { char PrivateData[16]; char *ForceNaturalAlignment; } TXTRecordRef;
-          typedef uint32_t DNSServiceFlags;
-          typedef int32_t DNSServiceErrorType;
-          #endif
-          #endif
-          "@
           if (Test-Path $dnssd_h) {
-            $content = Get-Content $dnssd_h
-            if ($content -notmatch "MSVC_DNSSD_TYPES_H") {
-               $types_prefix + "`n" + $content | Set-Content $dnssd_h
+            $original = Get-Content $dnssd_h -Raw
+            if ($original -notmatch "MSVC_DNSSD_TYPES_H") {
+               $types = @"
+#ifndef MSVC_DNSSD_TYPES_H
+#define MSVC_DNSSD_TYPES_H
+#ifdef _WIN32
+#include <stdint.h>
+typedef struct _DNSServiceRef_t *DNSServiceRef;
+typedef union _TXTRecordRef_t { char PrivateData[16]; char *ForceNaturalAlignment; } TXTRecordRef;
+typedef uint32_t DNSServiceFlags;
+typedef int32_t DNSServiceErrorType;
+#endif
+#endif
+
+"@
+               Set-Content $dnssd_h -Value ($types + $original) -Encoding Ascii
             }
           }
 
-          # 4. plist_mem_free の二重定義修正 (raop.c)
+          # 4. plist_mem_free の二重定義修正
           if (Test-Path "lib/raop.c") {
             (Get-Content lib/raop.c) -replace 'void\s+plist_mem_free', '// void plist_mem_free' | Set-Content lib/raop.c
           }
@@ -109,13 +109,11 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4142" `
-            -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib"
+            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4142 /wd4710 /wd4711 /wd5045" `
+            -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib"
 
       - name: Build
         run: |
-          # エラー箇所を無理やり通すために、スレッド関連の型変換エラーが出るファイルを特定し
-          # 強制的にコンパイルを通すオプションを検討しましたが、まずは標準ビルドを試します
           cmake --build build --config Release --parallel -- /v:m /p:WarningLevel=0
 
       - name: Prepare Artifact
