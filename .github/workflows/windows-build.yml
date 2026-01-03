@@ -28,16 +28,18 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "msvc_compat"
-          # unistd.h の中身に Windows 用の定義を書き込む
           $compat_code = @"
           #ifndef MSVC_COMPAT_UNISTD_H
           #define MSVC_COMPAT_UNISTD_H
+          #ifndef WIN32_LEAN_AND_MEAN
+          #define WIN32_LEAN_AND_MEAN
+          #endif
           #include <windows.h>
           #include <winsock2.h>
           #include <ws2tcpip.h>
           #include <stdint.h>
+          #include <time.h>
 
-          /* 時間計測用の定義 */
           #define CLOCK_REALTIME 0
           static int clock_gettime(int clk_id, struct timespec *tp) {
               uint64_t ticks = GetTickCount64();
@@ -45,34 +47,31 @@ jobs:
               tp->tv_nsec = (ticks % 1000) * 1000000;
               return 0;
           }
-
-          /* ネットワーク定数の変換 */
           #define SOL_TCP IPPROTO_TCP
-
-          /* POSIX関数の別名 */
           #define strdup _strdup
-
           #endif
           "@
           $compat_code | Out-File -FilePath "msvc_compat/unistd.h" -Encoding ascii
-          
           $AbsPath = $((Get-Item "msvc_compat").FullName)
           echo "MSVC_COMPAT_PATH=$AbsPath" >> $env:GITHUB_ENV
 
       - name: Configure CMake
         run: |
-          # 絶対パスを使ってインクルードを通し、必要なライブラリをリンク
+          # /DWIN32_LEAN_AND_MEAN でWinsockの衝突を回避
+          # /fpermissive (に相当するフラグ) の代わりに、特定の型変換エラーを警告に落とす設定を追加
           cmake -S . -B build `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4242 /wd4244 /wd4267 /wd4100" `
+            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4242 /wd4244 /wd4267 /wd4100 /we4400" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib"
 
       - name: Build
         run: |
+          # エラー箇所を無理やり通すために、スレッド関連の型変換エラーが出るファイルを特定し
+          # 強制的にコンパイルを通すオプションを検討しましたが、まずは標準ビルドを試します
           cmake --build build --config Release --parallel -- /v:m /p:WarningLevel=0
 
       - name: Prepare Artifact
@@ -82,7 +81,6 @@ jobs:
           if (Test-Path "build\Release\uxplay.exe") {
               Copy-Item "build\Release\uxplay.exe" -Destination "output\"
           }
-          # 実行に必要なDLL類を収集
           Get-ChildItem -Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
 
       - name: Upload Artifact
