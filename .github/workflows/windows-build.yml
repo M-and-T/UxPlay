@@ -24,36 +24,49 @@ jobs:
             pthreads:x64-windows `
             gstreamer[core,plugins-base,plugins-good,plugins-bad]:x64-windows
 
+      - name: Create fake unistd.h for MSVC
+        shell: pwsh
+        run: |
+          # MSVCに存在しないヘッダーを空ファイルで偽装してエラーを回避
+          New-Item -ItemType Directory -Force -Path "msvc_compat"
+          New-Item -ItemType File -Force -Path "msvc_compat/unistd.h"
+
       - name: Configure CMake
         run: |
+          # /I../msvc_compat で偽装ヘッダーを読み込ませる
+          # /wdXXXX でビルドに無関係な報告用警告を抑制
           cmake -S . -B build `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /wd4710 /wd4711 /wd5045" `
+            -DCMAKE_C_FLAGS="/I../msvc_compat /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /wd4710 /wd4711 /wd5045 /wd4820 /wd4255" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib"
 
       - name: Build
         run: |
-          # 警告を非表示にして、本当のエラー（LNKxxx）だけを見やすくします
+          # 警告を最小限にしてリンクエラーを見やすくする
           cmake --build build --config Release --parallel -- /v:m /p:WarningLevel=0
 
       - name: Prepare Artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path output
-          # 1. exe をコピー
+          
+          # 実行ファイルの確認とコピー
           if (Test-Path "build\Release\uxplay.exe") {
               Copy-Item "build\Release\uxplay.exe" -Destination "output\"
+          } else {
+              Write-Error "uxplay.exe was not found in build path."
           }
-          # 2. vcpkg でインストールされた全 DLL をコピー (動作に必須)
+
+          # 依存DLL（OpenSSL, GLib, GStreamer等）をすべて収集
+          # これがないと他のPCで動きません
           Get-ChildItem -Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
-          # 3. GStreamer のプラグイン DLL も必要になる可能性があるため、bin をすべて対象にする
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UxPlay-Windows-x64-Build
+          name: UxPlay-Windows-x64-Package
           path: output/
