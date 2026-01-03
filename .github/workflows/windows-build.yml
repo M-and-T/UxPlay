@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: checkout@v4
+        uses: actions/checkout@v4
 
       - name: Install dependencies via vcpkg
         run: |
@@ -27,7 +27,7 @@ jobs:
       - name: Create fake unistd.h for MSVC
         shell: pwsh
         run: |
-          # 確実にパスが通るよう、ルート直下に作成
+          # MSVCに存在しないヘッダーを絶対パスで偽装
           New-Item -ItemType Directory -Force -Path "msvc_compat"
           New-Item -ItemType File -Force -Path "msvc_compat/unistd.h"
           $AbsPath = $((Get-Item "msvc_compat").FullName)
@@ -35,14 +35,13 @@ jobs:
 
       - name: Configure CMake
         run: |
-          # 環境変数 $env:MSVC_COMPAT_PATH を使って絶対パスで指定
+          # 絶対パスを使ってインクルードを通し、必要なライブラリをリンク
           cmake -S . -B build `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_INCLUDE_PATH="$env:MSVC_COMPAT_PATH" `
             -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4242 /wd4244 /wd4267 /wd4100" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib"
 
@@ -57,10 +56,11 @@ jobs:
           if (Test-Path "build\Release\uxplay.exe") {
               Copy-Item "build\Release\uxplay.exe" -Destination "output\"
           }
+          # 実行に必要なDLL類を収集
           Get-ChildItem -Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
 
       - name: Upload Artifact
-        uses: upload-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           name: UxPlay-Windows-x64
           path: output/
