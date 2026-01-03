@@ -55,17 +55,58 @@ jobs:
           $AbsPath = $((Get-Item "msvc_compat").FullName)
           echo "MSVC_COMPAT_PATH=$AbsPath" >> $env:GITHUB_ENV
 
+      - name: Patch source code for MSVC
+        shell: pwsh
+        run: |
+          # 1. snprintf の二重定義を回避
+          if (Test-Path "lib/compat.h") {
+            (Get-Content lib/compat.h) -replace '#define snprintf _snprintf', '// #define snprintf _snprintf' | Set-Content lib/compat.h
+          }
+
+          # 2. thread_handle_t (構造体) への 0 代入エラーを修正
+          $thread_files = @("lib/httpd.c", "lib/raop_ntp.c", "lib/raop_rtp.c", "lib/raop_rtp_mirror.c")
+          foreach ($f in $thread_files) {
+            if (Test-Path $f) {
+              # "handle = 0;" を "{0}" 初期化に置換
+              (Get-Content $f) -replace '([a-zA-Z0-9_]+_handle)\s*=\s*0;', '$1 = {0};' | Set-Content $f
+            }
+          }
+
+          # 3. dnssd.h の型欠落を修正 (インクルードガード付き)
+          $dnssd_h = "lib/dnssd.h"
+          $types_prefix = @"
+          #ifndef MSVC_DNSSD_TYPES_H
+          #define MSVC_DNSSD_TYPES_H
+          #ifdef _WIN32
+          #include <stdint.h>
+          typedef struct _DNSServiceRef_t *DNSServiceRef;
+          typedef union _TXTRecordRef_t { char PrivateData[16]; char *ForceNaturalAlignment; } TXTRecordRef;
+          typedef uint32_t DNSServiceFlags;
+          typedef int32_t DNSServiceErrorType;
+          #endif
+          #endif
+          "@
+          if (Test-Path $dnssd_h) {
+            $content = Get-Content $dnssd_h
+            if ($content -notmatch "MSVC_DNSSD_TYPES_H") {
+               $types_prefix + "`n" + $content | Set-Content $dnssd_h
+            }
+          }
+          
+          # 4. plist_mem_free の二重定義修正
+          if (Test-Path "lib/raop.c") {
+            (Get-Content lib/raop.c) -replace 'void\s+plist_mem_free', '// void plist_mem_free' | Set-Content lib/raop.c
+          }
+
       - name: Configure CMake
         run: |
-          # /DWIN32_LEAN_AND_MEAN でWinsockの衝突を回避
-          # /fpermissive (に相当するフラグ) の代わりに、特定の型変換エラーを警告に落とす設定を追加
           cmake -S . -B build `
             -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4242 /wd4244 /wd4267 /wd4100 /we4400" `
+            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /D__STDC_WANT_SECURE_LIB__=0 /Dsnprintf=_snprintf /permissive /wd4710 /wd4711" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib"
 
       - name: Build
