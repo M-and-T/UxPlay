@@ -24,12 +24,38 @@ jobs:
             pthreads:x64-windows `
             gstreamer[core,plugins-base,plugins-good,plugins-bad]:x64-windows
 
-      - name: Create fake unistd.h for MSVC
+      - name: Create compatibility header for MSVC
         shell: pwsh
         run: |
-          # MSVCに存在しないヘッダーを絶対パスで偽装
           New-Item -ItemType Directory -Force -Path "msvc_compat"
-          New-Item -ItemType File -Force -Path "msvc_compat/unistd.h"
+          # unistd.h の中身に Windows 用の定義を書き込む
+          $compat_code = @"
+          #ifndef MSVC_COMPAT_UNISTD_H
+          #define MSVC_COMPAT_UNISTD_H
+          #include <windows.h>
+          #include <winsock2.h>
+          #include <ws2tcpip.h>
+          #include <stdint.h>
+
+          /* 時間計測用の定義 */
+          #define CLOCK_REALTIME 0
+          static int clock_gettime(int clk_id, struct timespec *tp) {
+              uint64_t ticks = GetTickCount64();
+              tp->tv_sec = ticks / 1000;
+              tp->tv_nsec = (ticks % 1000) * 1000000;
+              return 0;
+          }
+
+          /* ネットワーク定数の変換 */
+          #define SOL_TCP IPPROTO_TCP
+
+          /* POSIX関数の別名 */
+          #define strdup _strdup
+
+          #endif
+          "@
+          $compat_code | Out-File -FilePath "msvc_compat/unistd.h" -Encoding ascii
+          
           $AbsPath = $((Get-Item "msvc_compat").FullName)
           echo "MSVC_COMPAT_PATH=$AbsPath" >> $env:GITHUB_ENV
 
