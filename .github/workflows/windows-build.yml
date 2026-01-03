@@ -29,16 +29,20 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "msvc_compat"
           $compat_code = @"
-          #ifndef MSVC_COMPAT_UNISTD_H
-          #define MSVC_COMPAT_UNISTD_H
-          #ifndef WIN32_LEAN_AND_MEAN
-          #define WIN32_LEAN_AND_MEAN
-          #endif
+          #ifndef MSVC_COMPAT_H
+          #define MSVC_COMPAT_H
           #include <windows.h>
           #include <winsock2.h>
           #include <ws2tcpip.h>
           #include <stdint.h>
           #include <time.h>
+
+          /* dns_sd types */
+          typedef struct _DNSServiceRef_t *DNSServiceRef;
+          typedef union _TXTRecordRef_t { char PrivateData[16]; char *ForceNaturalAlignment; } TXTRecordRef;
+          typedef uint32_t DNSServiceFlags;
+          typedef int32_t DNSServiceErrorType;
+
           #define CLOCK_REALTIME 0
           static int clock_gettime(int clk_id, struct timespec *tp) {
               uint64_t ticks = GetTickCount64();
@@ -70,16 +74,7 @@ jobs:
             }
           }
 
-          # 3. dnssd.h の衝突回避 (vcpkg の dns_sd.h を優先的に読み込む)
-          $dnssd_h = "lib/dnssd.h"
-          if (Test-Path $dnssd_h) {
-            $original = Get-Content $dnssd_h -Raw
-            # dns_sd.h を先に読み込ませることで、後の重複定義を無視させる
-            $new_header = "#ifdef _WIN32`n#include <dns_sd.h>`n#define _TXTRecordRef_t_defined`n#endif`n"
-            Set-Content $dnssd_h -Value ($new_header + $original) -Encoding Ascii
-          }
-
-          # 4. plist_mem_free の二重定義修正
+          # 3. plist_mem_free の二重定義修正
           if (Test-Path "lib/raop.c") {
             (Get-Content lib/raop.c) -replace 'void\s+plist_mem_free', '// void plist_mem_free' | Set-Content lib/raop.c
           }
@@ -92,7 +87,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4142 /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4100 /wd4267 /wd4244 /wd4242" `
+            -DCMAKE_C_FLAGS="/I`"$env:MSVC_COMPAT_PATH`" /FI`"unistd.h`" /DWIN32 /D_WINDOWS /DWIN32_LEAN_AND_MEAN /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4142 /wd4710 /wd4711 /wd5045 /wd4820 /wd4255 /wd4100 /wd4267 /wd4244 /wd4242" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib"
 
       - name: Build
