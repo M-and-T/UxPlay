@@ -32,15 +32,14 @@ jobs:
             mingw-w64-x86_64-gstreamer
             mingw-w64-x86_64-gst-plugins-base
             mingw-w64-x86_64-gst-plugins-good
+            mingw-w64-x86_64-avahi
             git
-
       - name: Build UxPlay
         run: |
           mkdir build
           cd build
-          # MSYS2(MinGW)では "MinGW Makefiles" を指定するのが確実です
-          cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-          # make ではなく mingw32-make を使用します
+          # -DNO_MARCH_NATIVE=ON を追加して、汎用的なCPU向けにビルドします
+          cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DNO_MARCH_NATIVE=ON
           mingw32-make -j$(nproc)
 
       - name: Prepare Artifact
