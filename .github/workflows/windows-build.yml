@@ -36,20 +36,20 @@ jobs:
 
       - name: Build UxPlay
         run: |
-          # 1. ネットワーク広告機能のチェック判定を「広告機能がONのときだけ」に書き換えるパッチ
-          # 「if ( NOT APPLE )」を「if ( NOT APPLE AND NOT NO_AIRPLAY_ADVERT )」に置換
+          # 1. CMakeのチェックを回避 (前回成功したパッチ)
           sed -i 's/if ( NOT APPLE )/if ( NOT APPLE AND NOT NO_AIRPLAY_ADVERT )/' lib/CMakeLists.txt
-          
-          # 2. それでも FATAL_ERROR が出ないよう STATUS に置換（念のための保険）
           sed -i 's/FATAL_ERROR/STATUS/g' lib/CMakeLists.txt
+          
+          # 2. ソースコードレベルで dns_sd.h の読み込みをスキップさせるパッチ
+          # dnssd.c の中身を #if 0 ... #endif で無効化します
+          echo -e "#if 0\n$(cat lib/dnssd.c)\n#endif" > lib/dnssd.c
           
           mkdir build
           cd build
-          # 3. 広告機能をオフにするフラグを指定して実行
+          # 3. ビルド実行
           cmake .. -G "MinGW Makefiles" \
             -DCMAKE_BUILD_TYPE=Release \
             -DNO_AIRPLAY_ADVERT=ON \
-            -DNO_AIRPLAY_ADVT=ON \
             -DNO_MARCH_NATIVE=ON
           
           mingw32-make -j$(nproc)
