@@ -36,14 +36,29 @@ jobs:
 
       - name: Build UxPlay
         run: |
-          # 1. CMakeのチェックを回避 (前回成功したパッチ)
+          # 1. CMakeのチェックを回避
           sed -i 's/if ( NOT APPLE )/if ( NOT APPLE AND NOT NO_AIRPLAY_ADVERT )/' lib/CMakeLists.txt
           sed -i 's/FATAL_ERROR/STATUS/g' lib/CMakeLists.txt
           
-          # 2. ソースコードレベルで dns_sd.h の読み込みをスキップさせるパッチ
-          # dnssd.c の中身を #if 0 ... #endif で無効化します
-          echo -e "#if 0\n$(cat lib/dnssd.c)\n#endif" > lib/dnssd.c
-          
+          # 2. リンカーを騙すための「空の関数（スタブ）」を作成
+          # 他のファイルから呼び出される名前だけを定義し、中身を空にします
+          cat <<EOF > lib/dnssd.c
+          #include <stdint.h>
+          void dnssd_init() {}
+          void dnssd_register_raop() {}
+          void dnssd_unregister_raop() {}
+          void dnssd_register_airplay() {}
+          void dnssd_unregister_airplay() {}
+          void dnssd_destroy() {}
+          void dnssd_set_airplay_features() {}
+          uint64_t dnssd_get_airplay_features() { return 0; }
+          void* dnssd_get_hw_addr() { return 0; }
+          void* dnssd_get_airplay_txt() { return 0; }
+          void* dnssd_get_raop_txt() { return 0; }
+          const char* dnssd_get_name() { return "UxPlay"; }
+          void dnssd_set_pk() {}
+          EOF
+
           mkdir build
           cd build
           # 3. ビルド実行
