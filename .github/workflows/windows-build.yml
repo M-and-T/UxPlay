@@ -1,4 +1,4 @@
-name: Build UxPlay for Windows
+name: Build UxPlay for Windows (MSYS2)
 
 on:
   push:
@@ -7,74 +7,54 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies via vcpkg
-        run: |
-          vcpkg install `
-            openssl:x64-windows `
-            zlib:x64-windows `
-            libplist:x64-windows `
-            glib:x64-windows `
-            mdnsresponder:x64-windows `
-            pthreads:x64-windows `
-            gstreamer[core,plugins-base,plugins-good,plugins-bad]:x64-windows
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-libplist
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-pthreads
+            mingw-w64-x86_64-gstreamer
+            mingw-w64-x86_64-gst-plugins-base
+            mingw-w64-x86_64-gst-plugins-good
+            mingw-w64-x86_64-gst-plugins-bad
+            mingw-w64-x86_64-libavif
+            git
 
-      - name: Create compatibility header for MSVC
-        shell: pwsh
+      - name: Build UxPlay
         run: |
-          New-Item -ItemType Directory -Force -Path "msvc_compat"
-          $compat_code = @"
-          #ifndef MSVC_COMPAT_H
-          #define MSVC_COMPAT_H
-          #include <stdint.h>
-          #include <io.h>
-          typedef __int64 ssize_t;
-          #define strdup _strdup
-          #define CLOCK_REALTIME 0
-          #endif
-          "@
-          $compat_code | Out-File -FilePath "msvc_compat/unistd.h" -Encoding ascii
-          echo "MSVC_COMPAT_PATH=$((Get-Item "msvc_compat").FullName)" >> $env:GITHUB_ENV
-
-      - name: Patch source code for MSVC
-        shell: pwsh
-        run: |
-          # 全ファイルから snprintf の定義をコメントアウト
-          Get-ChildItem -Recurse -Include *.h, *.c | ForEach-Object {
-            (Get-Content $_.FullName) -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
-          }
-          # threads.h の pthread_t 定義を HANDLE に書き換え
-          (Get-Content lib/threads.h) -replace 'typedef pthread_t thread_handle_t;', 'typedef void* thread_handle_t;' | Set-Content lib/threads.h
-
-      - name: Configure CMake
-        run: |
-          cmake -S . -B build `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I \"$env:MSVC_COMPAT_PATH\" /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /permissive"
-
-      - name: Build
-        run: |
-          cmake --build build --config Release --parallel -- /v:m /p:WarningLevel=0
+          # MSYS2環境ではPOSIX互換が強いため、パッチなしでビルドを試みます
+          mkdir build
+          cd build
+          cmake .. -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
 
       - name: Prepare Artifact
-        shell: pwsh
         run: |
-          if (!(Test-Path "output")) { New-Item -ItemType Directory -Path "output" }
-          if (Test-Path "build\Release\uxplay.exe") {
-              Copy-Item "build\Release\uxplay.exe" -Destination "output\"
-          }
-          Get-ChildItem -Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" | Copy-Item -Destination "output\" -ErrorAction SilentlyContinue
+          mkdir output
+          cp build/uxplay.exe output/
+          # 実行に必要な最小限のDLLを収集（lddを使って依存DLLをコピーするスクリプト）
+          for dll in $(ldd build/uxplay.exe | grep "mingw64" | awk '{print $3}'); do
+            cp "$dll" output/
+          done
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UxPlay-Windows-x64
+          name: UxPlay-Windows-MSYS2
           path: output/
