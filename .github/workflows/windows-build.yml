@@ -83,19 +83,20 @@ jobs:
           mkdir -p output/lib/gstreamer-1.0
           cp /mingw64/lib/gstreamer-1.0/*.dll output/lib/gstreamer-1.0/
 
-          # 3. 全ての依存DLLを再帰的に収集（ここが肝心です）
-          # プラグインフォルダ内の全DLLが必要とするシステムファイルをbinから集めます
+          # 3. 重要：GStreamerスキャナーを探してコピー (libexecフォルダにあることが多いです)
+          find /mingw64 -name "gst-plugin-scanner.exe" -exec cp {} output/ \;
+
+          # 4. 全ての依存DLLを再帰的に収集
           find output/lib/gstreamer-1.0 -name "*.dll" -exec ldd {} \; | grep "mingw64" | awk '{print $3}' | sort -u | xargs -I {} cp -n {} output/ 2>/dev/null || true
 
-          # 4. 起動用バッチファイル
+          # 5. 起動用バッチファイル
           echo '@echo off' > output/run_uxplay.bat
-          echo 'set PATH=%~dp0;%PATH%' >> output/run_uxplay.bat
-          echo 'set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0' >> output/run_uxplay.bat
+          echo 'set "ROOT=%%~dp0"' >> output/run_uxplay.bat
+          echo 'set "PATH=%%ROOT%%;%%PATH%%"' >> output/run_uxplay.bat
+          echo 'set "GST_PLUGIN_PATH=%%ROOT%%lib\gstreamer-1.0"' >> output/run_uxplay.bat
+          echo 'set "GST_PLUGIN_SCANNER=%%ROOT%%gst-plugin-scanner.exe"' >> output/run_uxplay.bat
           echo 'uxplay.exe' >> output/run_uxplay.bat
           echo 'pause' >> output/run_uxplay.bat
-
-          # Prepare Artifact ステップの中に追加
-          cp /mingw64/lib/gstreamer-1.0/gst-plugin-scanner.exe output/ 2>/dev/null || cp /mingw64/bin/gst-plugin-scanner.exe output/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
