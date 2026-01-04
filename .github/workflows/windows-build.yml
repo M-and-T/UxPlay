@@ -38,9 +38,11 @@ jobs:
         run: |
           mkdir build
           cd build
-          # -DNO_AIRPLAY_ADVT=ON を追加して、エラーの元になる機能を一時的にオフにします
+          # フラグを NO_AIRPLAY_ADVERT (ERあり) に修正し、
+          # かつ念のためもう一つの可能性のあるフラグも指定します
           cmake .. -G "MinGW Makefiles" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DNO_AIRPLAY_ADVERT=ON \
             -DNO_AIRPLAY_ADVT=ON \
             -DNO_MARCH_NATIVE=ON
           mingw32-make -j$(nproc)
