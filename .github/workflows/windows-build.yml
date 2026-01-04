@@ -32,15 +32,17 @@ jobs:
             mingw-w64-x86_64-gstreamer
             mingw-w64-x86_64-gst-plugins-base
             mingw-w64-x86_64-gst-plugins-good
-            mingw-w64-x86_64-dns-sd
             git
 
       - name: Build UxPlay
         run: |
           mkdir build
           cd build
-          # -DNO_MARCH_NATIVE=ON を追加して、汎用的なCPU向けにビルドします
-          cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DNO_MARCH_NATIVE=ON
+          # -DNO_AIRPLAY_ADVT=ON を追加して、エラーの元になる機能を一時的にオフにします
+          cmake .. -G "MinGW Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNO_AIRPLAY_ADVT=ON \
+            -DNO_MARCH_NATIVE=ON
           mingw32-make -j$(nproc)
 
       - name: Prepare Artifact
