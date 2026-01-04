@@ -31,73 +31,34 @@ jobs:
           $compat_code = @"
           #ifndef MSVC_COMPAT_H
           #define MSVC_COMPAT_H
-
-          #ifndef WIN32_LEAN_AND_MEAN
-          #define WIN32_LEAN_AND_MEAN
-          #endif
-
-          /* 基本的な型定義 */
           #include <stdint.h>
           #include <io.h>
-          #include <process.h>
-
-          /* POSIX missing macros */
-          #define CLOCK_REALTIME 0
-          #define SOL_TCP 6  /* IPPROTO_TCP */
-          #define strdup _strdup
-
-          /* ssize_t definition */
-          #ifndef _SSIZE_T_DEFINED
-          #define _SSIZE_T_DEFINED
-          #ifdef _WIN64
           typedef __int64 ssize_t;
-          #else
-          typedef int ssize_t;
-          #endif
-          #endif
-
-          /* Avoid dnssd.h conflicts */
-          #define _TXTRecordRef_t_defined
+          #define strdup _strdup
+          #define CLOCK_REALTIME 0
           #endif
           "@
           $compat_code | Out-File -FilePath "msvc_compat/unistd.h" -Encoding ascii
-          $AbsPath = $((Get-Item "msvc_compat").FullName)
-          echo "MSVC_COMPAT_PATH=$AbsPath" >> $env:GITHUB_ENV
-          echo "MSVC_COMPAT_PATH=$AbsPath" >> $env:GITHUB_ENV
+          echo "MSVC_COMPAT_PATH=$((Get-Item "msvc_compat").FullName)" >> $env:GITHUB_ENV
 
       - name: Patch source code for MSVC
         shell: pwsh
         run: |
-          # 1. snprintf の二重定義を無効化
+          # 全ファイルから snprintf の定義をコメントアウト
           Get-ChildItem -Recurse -Include *.h, *.c | ForEach-Object {
             (Get-Content $_.FullName) -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
           }
-
-          # 2. plist_mem_free の重複定義を削除 (lib/raop.c)
-          # 行ごと消すのではなく、関数定義の開始部分だけをコメントアウト
-          if (Test-Path "lib/raop.c") {
-            $content = Get-Content "lib/raop.c"
-            $content = $content -replace 'void\s+plist_mem_free', '// void plist_mem_free'
-            $content | Set-Content "lib/raop.c"
-          }
-
-          # 3. threads.h の型競合を修正
-          # thread_handle_t を HANDLE に直接書き換える
-          if (Test-Path "lib/threads.h") {
-            (Get-Content lib/threads.h) -replace 'typedef\s+pthread_t\s+thread_handle_t;', 'typedef HANDLE thread_handle_t;' | Set-Content lib/threads.h
-          }
+          # threads.h の pthread_t 定義を HANDLE に書き換え
+          (Get-Content lib/threads.h) -replace 'typedef pthread_t thread_handle_t;', 'typedef void* thread_handle_t;' | Set-Content lib/threads.h
 
       - name: Configure CMake
         run: |
-          $CompatPath = $env:MSVC_COMPAT_PATH
           cmake -S . -B build `
-            -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I $CompatPath /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4431 /wd4013 /wd4142" `
-            -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib"
+            -DCMAKE_C_FLAGS="/I \"$env:MSVC_COMPAT_PATH\" /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /permissive"
 
       - name: Build
         run: |
