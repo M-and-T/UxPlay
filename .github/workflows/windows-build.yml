@@ -73,12 +73,19 @@ jobs:
             (Get-Content $_.FullName) -replace '#define snprintf', '// #define snprintf' | Set-Content $_.FullName
           }
 
-          # 2. plist_mem_free の二重定義修正
+          # 2. plist_mem_free の重複定義を削除 (lib/raop.c)
+          # 行ごと消すのではなく、関数定義の開始部分だけをコメントアウト
           if (Test-Path "lib/raop.c") {
-            (Get-Content lib/raop.c) -replace 'void\s+plist_mem_free', '// void plist_mem_free' | Set-Content lib/raop.c
+            $content = Get-Content "lib/raop.c"
+            $content = $content -replace 'void\s+plist_mem_free', '// void plist_mem_free'
+            $content | Set-Content "lib/raop.c"
           }
 
-          # 3. thread_handle_t の問題は CFLAGS で対処するため、ここでは何もしない
+          # 3. threads.h の型競合を修正
+          # thread_handle_t を HANDLE に直接書き換える
+          if (Test-Path "lib/threads.h") {
+            (Get-Content lib/threads.h) -replace 'typedef\s+pthread_t\s+thread_handle_t;', 'typedef HANDLE thread_handle_t;' | Set-Content lib/threads.h
+          }
 
       - name: Configure CMake
         run: |
@@ -89,7 +96,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I $CompatPath /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /Dthread_handle_t=HANDLE /DDNSServiceRef=void* /Ddnssd_t=void /permissive /wd4005 /wd4431 /wd4013" `
+            -DCMAKE_C_FLAGS="/I $CompatPath /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /permissive /wd4005 /wd4431 /wd4013 /wd4142" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib"
 
       - name: Build
