@@ -31,22 +31,30 @@ jobs:
           $compat_code = @"
           #ifndef MSVC_COMPAT_H
           #define MSVC_COMPAT_H
-          #include <windows.h>
-          #include <winsock2.h>
-          #include <ws2tcpip.h>
-          #include <stdint.h>
-          #include <time.h>
 
-          /* POSIX missing types/macros */
+          #ifndef WIN32_LEAN_AND_MEAN
+          #define WIN32_LEAN_AND_MEAN
+          #endif
+
+          /* 基本的な型定義 */
+          #include <stdint.h>
+          #include <io.h>
+          #include <process.h>
+
+          /* POSIX missing macros */
           #define CLOCK_REALTIME 0
-          static int clock_gettime(int clk_id, struct timespec *tp) {
-              uint64_t ticks = GetTickCount64();
-              tp->tv_sec = ticks / 1000;
-              tp->tv_nsec = (ticks % 1000) * 1000000;
-              return 0;
-          }
-          #define SOL_TCP IPPROTO_TCP
+          #define SOL_TCP 6  /* IPPROTO_TCP */
           #define strdup _strdup
+
+          /* ssize_t definition */
+          #ifndef _SSIZE_T_DEFINED
+          #define _SSIZE_T_DEFINED
+          #ifdef _WIN64
+          typedef __int64 ssize_t;
+          #else
+          typedef int ssize_t;
+          #endif
+          #endif
 
           /* Avoid dnssd.h conflicts */
           #define _TXTRecordRef_t_defined
@@ -54,6 +62,7 @@ jobs:
           "@
           $compat_code | Out-File -FilePath "msvc_compat/unistd.h" -Encoding ascii
           $AbsPath = $((Get-Item "msvc_compat").FullName)
+          echo "MSVC_COMPAT_PATH=$AbsPath" >> $env:GITHUB_ENV
           echo "MSVC_COMPAT_PATH=$AbsPath" >> $env:GITHUB_ENV
 
       - name: Patch source code for MSVC
@@ -73,7 +82,6 @@ jobs:
 
       - name: Configure CMake
         run: |
-          # 引用符のトラブルを避けるため、パスを一度変数に入れ、CMakeには直接渡します
           $CompatPath = $env:MSVC_COMPAT_PATH
           cmake -S . -B build `
             -G "Visual Studio 17 2022" -A x64 `
@@ -81,7 +89,7 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DCMAKE_BUILD_TYPE=Release `
             -DNO_AIRPLAY_ADVT=OFF `
-            -DCMAKE_C_FLAGS="/I $CompatPath /FI unistd.h /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /Dthread_handle_t=HANDLE /DDNSServiceRef=void* /Ddnssd_t=void /permissive /wd4005 /wd4431 /wd4013" `
+            -DCMAKE_C_FLAGS="/I $CompatPath /DWIN32 /D_WINDOWS /D_CRT_SECURE_NO_WARNINGS /D_CRT_NONSTDC_NO_DEPRECATE /Dthread_handle_t=HANDLE /DDNSServiceRef=void* /Ddnssd_t=void /permissive /wd4005 /wd4431 /wd4013" `
             -DCMAKE_EXE_LINKER_FLAGS="ws2_32.lib winmm.lib iphlpapi.lib crypt32.lib"
 
       - name: Build
