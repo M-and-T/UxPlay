@@ -73,10 +73,27 @@ jobs:
         run: |
           mkdir output
           cp build/uxplay.exe output/
-          # 実行に必要な最小限のDLLを収集（lddを使って依存DLLをコピーするスクリプト）
+          
+          # 1. 実行に必要な基本DLLを収集
           for dll in $(ldd build/uxplay.exe | grep "mingw64" | awk '{print $3}'); do
             cp "$dll" output/
           done
+
+          # 2. GStreamerのプラグイン一式をコピー (ここが重要！)
+          # MSYS2内のプラグインフォルダを構造ごとコピーします
+          mkdir -p output/lib/gstreamer-1.0
+          cp /mingw64/lib/gstreamer-1.0/*.dll output/lib/gstreamer-1.0/
+
+          # 3. GStreamer本体の動作に必要な依存DLLも追加で収集
+          # プラグインが読み込む先のDLLも漏らさずコピーします
+          cp /mingw64/bin/gst-*.exe output/ 2>/dev/null || true
+          cp /mingw64/bin/libgst*.dll output/
+
+          # 4. 起動用バッチファイルを作成
+          echo '@echo off' > output/run_uxplay.bat
+          echo 'set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0' >> output/run_uxplay.bat
+          echo 'uxplay.exe %*' >> output/run_uxplay.bat
+          echo 'pause' >> output/run_uxplay.bat
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
