@@ -76,21 +76,25 @@ jobs:
           mkdir output
           cp build/uxplay.exe output/
           
-          # 1. 実行ファイルが直接必要とするDLLだけを正確に抽出
+          # 1. 直接依存するDLLの収集
           ldd build/uxplay.exe | grep "mingw64" | awk '{print $3}' | xargs -I {} cp {} output/
 
-          # 2. プラグインを配置
+          # 2. プラグインの配置
           mkdir -p output/lib/gstreamer-1.0
           cp /mingw64/lib/gstreamer-1.0/*.dll output/lib/gstreamer-1.0/
 
-          # 3. プラグインが「絶対に」必要とする部品だけをbinから追加
-          # 重複を避けるため cp -n (上書き禁止) でコピーします
+          # 3. エラーの元になる「必須でない」プラグインを削除（DLL衝突回避）
+          rm -f output/lib/gstreamer-1.0/libgstvulkan.dll
+          rm -f output/lib/gstreamer-1.0/libgstcodec2json.dll
+          rm -f output/lib/gstreamer-1.0/libgstd3d12.dll
+
+          # 4. プラグインが必要とする依存DLLを再収集
           find output/lib/gstreamer-1.0 -name "*.dll" -exec ldd {} \; | grep "mingw64" | awk '{print $3}' | sort -u | xargs -I {} cp -n {} output/ 2>/dev/null || true
 
-          # 4. スキャナーも忘れずに
+          # 5. スキャナーの追加
           find /mingw64 -name "gst-plugin-scanner.exe" -exec cp {} output/ \;
 
-          # 5. バッチファイル (英語のみで作成し、文字化けを徹底防止)
+          # 6. バッチファイル
           echo "@echo off" > output/run_uxplay.bat
           echo "set ROOT=%%~dp0" >> output/run_uxplay.bat
           echo "set PATH=%%ROOT%%;%%PATH%%" >> output/run_uxplay.bat
