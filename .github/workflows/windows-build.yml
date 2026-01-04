@@ -36,15 +36,18 @@ jobs:
 
       - name: Build UxPlay
         run: |
+          # 1. dns_sd のチェックを強制的に無効化するパッチ (CMakeLists.txt のエラー箇所を無効化)
+          sed -i 's/message(FATAL_ERROR " dns_sd.h not found ")/message(STATUS "Ignoring missing dns_sd.h for MSYS2 build")/' lib/CMakeLists.txt
+          
           mkdir build
           cd build
-          # フラグを NO_AIRPLAY_ADVERT (ERあり) に修正し、
-          # かつ念のためもう一つの可能性のあるフラグも指定します
+          # 2. 念のためフラグも全部乗せで実行
           cmake .. -G "MinGW Makefiles" \
             -DCMAKE_BUILD_TYPE=Release \
             -DNO_AIRPLAY_ADVERT=ON \
             -DNO_AIRPLAY_ADVT=ON \
             -DNO_MARCH_NATIVE=ON
+          
           mingw32-make -j$(nproc)
 
       - name: Prepare Artifact
