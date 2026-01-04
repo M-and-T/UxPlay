@@ -76,27 +76,28 @@ jobs:
           mkdir output
           cp build/uxplay.exe output/
           
-          # 1. 基本DLLの収集
+          # 1. 実行ファイルが直接必要とするDLLだけを正確に抽出
           ldd build/uxplay.exe | grep "mingw64" | awk '{print $3}' | xargs -I {} cp {} output/
 
-          # 2. プラグインのコピー
+          # 2. プラグインを配置
           mkdir -p output/lib/gstreamer-1.0
           cp /mingw64/lib/gstreamer-1.0/*.dll output/lib/gstreamer-1.0/
 
-          # 3. 重要：GStreamerスキャナーを探してコピー (libexecフォルダにあることが多いです)
-          find /mingw64 -name "gst-plugin-scanner.exe" -exec cp {} output/ \;
-
-          # 4. 全ての依存DLLを再帰的に収集
+          # 3. プラグインが「絶対に」必要とする部品だけをbinから追加
+          # 重複を避けるため cp -n (上書き禁止) でコピーします
           find output/lib/gstreamer-1.0 -name "*.dll" -exec ldd {} \; | grep "mingw64" | awk '{print $3}' | sort -u | xargs -I {} cp -n {} output/ 2>/dev/null || true
 
-          # 5. 起動用バッチファイル
-          echo '@echo off' > output/run_uxplay.bat
-          echo 'set "ROOT=%%~dp0"' >> output/run_uxplay.bat
-          echo 'set "PATH=%%ROOT%%;%%PATH%%"' >> output/run_uxplay.bat
-          echo 'set "GST_PLUGIN_PATH=%%ROOT%%lib\gstreamer-1.0"' >> output/run_uxplay.bat
-          echo 'set "GST_PLUGIN_SCANNER=%%ROOT%%gst-plugin-scanner.exe"' >> output/run_uxplay.bat
-          echo 'uxplay.exe' >> output/run_uxplay.bat
-          echo 'pause' >> output/run_uxplay.bat
+          # 4. スキャナーも忘れずに
+          find /mingw64 -name "gst-plugin-scanner.exe" -exec cp {} output/ \;
+
+          # 5. バッチファイル (英語のみで作成し、文字化けを徹底防止)
+          echo "@echo off" > output/run_uxplay.bat
+          echo "set ROOT=%%~dp0" >> output/run_uxplay.bat
+          echo "set PATH=%%ROOT%%;%%PATH%%" >> output/run_uxplay.bat
+          echo "set GST_PLUGIN_PATH=%%ROOT%%lib\gstreamer-1.0" >> output/run_uxplay.bat
+          echo "set GST_PLUGIN_SCANNER=%%ROOT%%gst-plugin-scanner.exe" >> output/run_uxplay.bat
+          echo "uxplay.exe" >> output/run_uxplay.bat
+          echo "pause" >> output/run_uxplay.bat
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
