@@ -32,6 +32,8 @@ jobs:
             mingw-w64-x86_64-gstreamer
             mingw-w64-x86_64-gst-plugins-base
             mingw-w64-x86_64-gst-plugins-good
+            mingw-w64-x86_64-gst-plugins-bad
+            mingw-w64-x86_64-gst-libav
             git
 
       - name: Build UxPlay
@@ -74,29 +76,22 @@ jobs:
           mkdir output
           cp build/uxplay.exe output/
           
-          # 1. uxplay.exe が直接必要とする DLL を収集
-          for dll in $(ldd build/uxplay.exe | grep "mingw64" | awk '{print $3}'); do
-            cp "$dll" output/
-          done
+          # 1. 基本DLLの収集
+          ldd build/uxplay.exe | grep "mingw64" | awk '{print $3}' | xargs -I {} cp {} output/
 
-          # 2. GStreamerプラグイン本体をコピー
+          # 2. プラグインのコピー
           mkdir -p output/lib/gstreamer-1.0
           cp /mingw64/lib/gstreamer-1.0/*.dll output/lib/gstreamer-1.0/
 
-          # 3. 【重要】プラグインが依存する「すべてのDLL」を力技で収集
-          # フォルダ内の全プラグインに対して ldd をかけ、重複なしで bin からコピーします
-          echo "Collecting plugin dependencies..."
-          for plugin in output/lib/gstreamer-1.0/*.dll; do
-            for dll in $(ldd "$plugin" | grep "mingw64" | awk '{print $3}'); do
-              cp -n "$dll" output/ 2>/dev/null || true
-            done
-          done
+          # 3. 全ての依存DLLを再帰的に収集（ここが肝心です）
+          # プラグインフォルダ内の全DLLが必要とするシステムファイルをbinから集めます
+          find output/lib/gstreamer-1.0 -name "*.dll" -exec ldd {} \; | grep "mingw64" | awk '{print $3}' | sort -u | xargs -I {} cp -n {} output/ 2>/dev/null || true
 
-          # 4. 起動用バッチファイル（PATHをその場に限定して通す設定）
+          # 4. 起動用バッチファイル
           echo '@echo off' > output/run_uxplay.bat
           echo 'set PATH=%~dp0;%PATH%' >> output/run_uxplay.bat
           echo 'set GST_PLUGIN_PATH=%~dp0lib\gstreamer-1.0' >> output/run_uxplay.bat
-          echo 'uxplay.exe %*' >> output/run_uxplay.bat
+          echo 'uxplay.exe' >> output/run_uxplay.bat
           echo 'pause' >> output/run_uxplay.bat
 
       - name: Upload Artifact
