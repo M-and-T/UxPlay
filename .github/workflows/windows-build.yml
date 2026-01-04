@@ -94,6 +94,9 @@ jobs:
           echo 'uxplay.exe' >> output/run_uxplay.bat
           echo 'pause' >> output/run_uxplay.bat
 
+          # Prepare Artifact ステップの中に追加
+          cp /mingw64/lib/gstreamer-1.0/gst-plugin-scanner.exe output/ 2>/dev/null || cp /mingw64/bin/gst-plugin-scanner.exe output/
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
