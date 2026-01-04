@@ -32,8 +32,9 @@ jobs:
             mingw-w64-x86_64-gstreamer
             mingw-w64-x86_64-gst-plugins-base
             mingw-w64-x86_64-gst-plugins-good
-            mingw-w64-x86_64-avahi
+            mingw-w64-x86_64-dns-sd
             git
+
       - name: Build UxPlay
         run: |
           mkdir build
